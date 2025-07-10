@@ -201,7 +201,10 @@ if not os.path.exists('./figures/all results'):
 # Find and plot elements with violations
 
 # To store violating elements
-contingencies = []
+CNE = []
+
+
+# CNE - Critical Network Element
 
 # Set up folder to store result plots
 if not os.path.exists('./figures/violations'):
@@ -218,12 +221,12 @@ for zone_name, zone_data in results.items():
                 for res_type, values in el_data.items():
                     # Check for overload
                     if res_type == 'c:loading' and any(v > 100 for v in values):
-                        contingencies.append((zone_name, cat_name, el_name))
+                        CNE.append({'Zone':zone_name, 'Category': cat_name, 'Name': el_name})
                         violated = True
     
                     # Check for voltage violation
                     if res_type == 'm:u' and any(v < 0.95 or v > 1.05 for v in values):
-                        contingencies.append((zone_name, cat_name, el_name))
+                        CNE.append({'Zone':zone_name, 'Category': cat_name, 'Name': el_name})
                         violated = True
     
                 # Only plot if this element violated
@@ -240,11 +243,46 @@ for zone_name, zone_data in results.items():
                     plt.savefig(rf'./figures/violations/{zone_name} - {cat_name} - {el_name} (VIOLATION).jpg', bbox_inches='tight')
                     plt.show()
 
+print (f'Critical Network Elements: {CNE}')
 
 
-# CNE - Critical Network Element
+#%% CNEC - Critical Network Element with Contingency
 
-# CNEC - Critical Network Element with Contingency
+CNEC= []
+if not os.path.exists('./cnec results'):
+    os.mkdir('./cnec results')
+
+# Activate Contingency StudyCase
+studycases= app.GetProjectFolder('study').GetContents()
+for sc in studycases:
+    if ('Contingency') in str(sc):
+        sc.Activate()
+        active=sc
+
+# Get element        
+cont = app.GetFromStudyCase("ComSimoutage")
+# Define limits
+cont.SetLimits(0.95,1.05,100)
+# Perform contingency analysis and return fault code
+fault_check = cont.ExecuteAndCheck()
+if fault_check == 0:
+    print('Contingency calculation succesful')
+else:
+    print(f'Contingency analysis returns fault: {fault_check}')
+# Collect results (via conversion to csv)
+res=app.GetFromStudyCase("ComRes")
+res.iopt_exp=6                         # 6: csv
+res.f_name=r'C:\Users\alice\OneDrive - Lund University\Dokument\Doktorand IEA\Kurser\Flowbased\Python - Flowbased\cnec results/contingencies.csv'
+res.ExportFullRange()
+
+contingencies = pd.read_csv('./cnec results/contingencies.csv',index_col=0)
+        
+# Go back to original studycase
+for sc in studycases:
+    if ('01') in str(sc):
+        sc.Activate()
+        active=sc
+
 
 # CDC - Combined Dynamic Constraint
 
