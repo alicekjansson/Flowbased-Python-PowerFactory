@@ -221,12 +221,12 @@ for zone_name, zone_data in results.items():
                 for res_type, values in el_data.items():
                     # Check for overload
                     if res_type == 'c:loading' and any(v > 100 for v in values):
-                        CNE.append({'Zone':zone_name, 'Category': cat_name, 'Name': el_name})
+                        CNE.append(el_name)
                         violated = True
     
                     # Check for voltage violation
                     if res_type == 'm:u' and any(v < 0.95 or v > 1.05 for v in values):
-                        CNE.append({'Zone':zone_name, 'Category': cat_name, 'Name': el_name})
+                        CNE.append( el_name)
                         violated = True
     
                 # Only plot if this element violated
@@ -282,9 +282,23 @@ for sc in studycases:
     if ('01') in str(sc):
         sc.Activate()
         active=sc
+        
+# To simplify here, I have chosen to only consider overloaded branches (not voltage issues)
+
+# Create a boolean mask for desired columns
+mask = contingencies.iloc[0].isin(["Loading in %", "Object index"])
+
+# Use the mask to filter columns, only keeping columns containing loading
+contingencies = contingencies.loc[:, mask].iloc[1:,:].replace("   ----",0).astype(float)
+# Keep only columns that have contingencies (loaded above 80%)
+CNEC = contingencies.loc[:, (contingencies > 80).any()].columns.tolist()
 
 
-# CDC - Combined Dynamic Constraint
+# CDC - Combined Dynamic Constraint. These are not calculated specifically in this code.
+
+#%% Generation and Load Shiftkeys
+
+
 
 
 
