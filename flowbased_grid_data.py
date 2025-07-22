@@ -7,7 +7,7 @@ Created on Tue Jun 17 10:45:39 2025
 
 
 import numpy
-import json
+import pickle
 import pandas as pd
 import warnings
 import matplotlib.pyplot as plt
@@ -56,6 +56,8 @@ for ElmZone in all_zones:
 boundaries = app.GetCalcRelevantObjects("ElmBoundary")
 
 
+
+
 #%%
 # D-2 forecasted load and generation data
 # Define relative load curves of 24 hours
@@ -67,6 +69,8 @@ data_curves['Nuclear']=[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 data_curves['Oil']=[el*0.8 for el in data_curves['Load']]
 data_curves['Coal']=[el*0.8 for el in data_curves['Load']]
 data_curves['Gas']=[el*0.8 for el in data_curves['Load']]
+
+pd.DataFrame(data_curves).to_csv(r'.\data\ToRCC\D-2data.csv')
     
     
 #%% Update dictionary of TSO data
@@ -90,6 +94,11 @@ for name,zone in bidding_zones.items():
             zone_dict[el.loc_name] = dic
     tso_data[name] = zone_dict
 
+# Save dictionary    
+with open('./data/ToRCC/tso_data.pkl', 'wb') as f:
+    pickle.dump(tso_data, f)
+
+#%%
 # Set up folder to store plots
 if not os.path.exists('./figures'):
     os.mkdir('./figures')
@@ -143,6 +152,7 @@ for name,zone in res_elements.items():
 results['Boundaries']={}
 for bound in boundaries:
     results['Boundaries'][bound.loc_name]={'c:Pinter':[],'c:Qinter':[]}
+    
 
 
 # Update model, run load flow, collect results for each time step
@@ -203,6 +213,9 @@ if not os.path.exists('./figures/all results'):
 # To store violating elements
 CNE = []
 
+if not os.path.exists('./cnec results'):
+    os.mkdir('./cnec results')
+
 
 # CNE - Critical Network Element
 
@@ -230,7 +243,7 @@ for zone_name, zone_data in results.items():
                         violated = True
     
                 # Only plot if this element violated
-                if violated:
+                if violated and cat_name == 'Lines':
                     plt.figure(figsize=(8, 5))
                     for res_type, values in el_data.items():
                         plt.plot(values, label=res_type)
@@ -245,12 +258,12 @@ for zone_name, zone_data in results.items():
 
 print (f'Critical Network Elements: {CNE}')
 
+pd.DataFrame(CNE).to_csv(r'./cnec results/CNE_list.csv')
 
 #%% CNEC - Critical Network Element with Contingency
 
 CNEC= []
-if not os.path.exists('./cnec results'):
-    os.mkdir('./cnec results')
+
 
 # Activate Contingency StudyCase
 studycases= app.GetProjectFolder('study').GetContents()
@@ -293,12 +306,31 @@ contingencies = contingencies.loc[:, mask].iloc[1:,:].replace("   ----",0).astyp
 # Keep only columns that have contingencies (loaded above 80%)
 CNEC = contingencies.loc[:, (contingencies > 80).any()].columns.tolist()
 
+pd.DataFrame(CNEC).to_csv(r'./cnec results/CNEC_list.csv')
+
 
 # CDC - Combined Dynamic Constraint. These are not calculated specifically in this code.
 
 #%% Generation and Load Shiftkeys
 
+GLSK_strat = 3                  # Select strategy (3: Relative participation to installed capacity)
+GLSK = {}
 
+for zone, values in tso_data.items():
+    zone_dict = {}
+    # Filter for generators
+    gen_units = {name: data['Static Power (MW)'] for name, data in values.items() if data['Category'] != 'Load'}
+    # Calculate the total generation capacity in the zone
+    total_capacity = sum(gen_units.values())
+    # Normalize each unit's capacity
+    if total_capacity > 0:
+        zone_dict = {name: capacity / total_capacity for name, capacity in gen_units.items()}
+    # Store the normalized generation distribution for the zone
+    GLSK[zone] = zone_dict
+    
+# TO-DO: IMPLEMENT THE OTHER STRATEGIES
 
+#%% Send over information to RCC
 
+# At this point, send over IGM, CRAC (IG-100), Bidding zone definitions (IG-101), GLSK (IG-103)
 
