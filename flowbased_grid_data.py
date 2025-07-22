@@ -233,12 +233,12 @@ for zone_name, zone_data in results.items():
     
                 for res_type, values in el_data.items():
                     # Check for overload
-                    if res_type == 'c:loading' and any(v > 100 for v in values):
+                    if res_type == 'c:loading' and any(v > 100 for v in values) and cat_name == 'Lines':
                         CNE.append(el_name)
                         violated = True
     
                     # Check for voltage violation
-                    if res_type == 'm:u' and any(v < 0.95 or v > 1.05 for v in values):
+                    if res_type == 'm:u' and any(v < 0.95 or v > 1.05 for v in values) and cat_name == 'Lines':
                         CNE.append( el_name)
                         violated = True
     

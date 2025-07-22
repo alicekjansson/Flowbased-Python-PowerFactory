@@ -5,7 +5,7 @@ Created on Mon Jul 21 13:58:01 2025
 @author: alice
 """
 
-import numpy
+import numpy as np
 import json
 import pandas as pd
 import warnings
@@ -80,7 +80,6 @@ res.ExportFullRange()
 ptdf_res=pd.read_csv('./PTDF results/ptdf.csv')
 
 
-
 #%%
 
 CNEC= pd.read_csv('./cnec results/CNEC_list.csv',index_col=0)
@@ -92,13 +91,40 @@ ptdf_cnec=ptdf_res[CNE].iloc[1:,:].transpose()
 
 q_share= 0.1        # The share of reactive power is assumed to be 10%
 
-Fmax_values = []
-Fref_values = []
-
 hour = 0 
 build_igm(hour, app, bidding_zones, bidding_zones_names, tso_data, boundaries)
 
-# For each CNE, 
+#%%
+
+Fmax_cne = {}
+Fref_cne = []
+
+
+# Collect line elements
+lines = app.GetCalcRelevantObjects("ElmLne")
+
+# For each CNE, calculate Fmax and collect Fref
+for cne_el in CNE['0']:
+   for line in lines:
+       if str(cne_el) == str(line.loc_name):
+          
+          F = line.GetAttribute('m:P:bus1')
+          Fref_cne.append(F)
+          loading = line.GetAttribute('c:loading')
+          Fmax = F / loading * 100
+          Fmax_cne[line.loc_name] = Fmax
+
+# Collect NPref, the net positions of each area
+zone_ref = pd.DataFrame(index=bidding_zones_names, columns = ['NP','Fref'])
+for zone in all_zones:
+    NP = zone.GetAttribute('c:InterP')
+    zone_ref[zone.loc_name,'NP'] = NP
+
+# Calculate F0
+F0 = Fref - ptdf_cnec * zone_ref['NP']
+
+
+#%%
 
 # After simulation, reset original load flow values
 reset_gridmodel(app, bidding_zones, bidding_zones_names, tso_data)
