@@ -22,7 +22,7 @@ def get_zone(ElmZone):
 # Update model, run load flow, collect results for each time step
 def setup_igm(hour, app, results, bidding_zones, res_elements, bidding_zones_names, tso_data, boundaries, res_collect):
     print(f"Running IGM generation for hour: {hour}")
-    
+    q_share= 0.1        # The share of reactive power is assumed to be 10%
     # Update all values according to forecast
     for zone in bidding_zones_names:
         for cat, values in bidding_zones[zone].items():
@@ -32,7 +32,7 @@ def setup_igm(hour, app, results, bidding_zones, res_elements, bidding_zones_nam
                     value = tso_data[zone][name]['Load curve'][hour-1]
                     if cat == 'Loads':
                         el.SetAttribute('plini',value)
-                        el.SetAttribute('qlini',value*0.1)
+                        el.SetAttribute('qlini',value*q_share)
                     else:
                         el.SetAttribute('pgini',value)
     
