@@ -48,83 +48,125 @@ for ElmZone in all_zones:
 with open('./data/ToRCC/tso_data.pkl', 'rb') as f:
     tso_data = pickle.load(f)
 
-#%% Zone to Slack PTDF
-
-# In PowerFactory, go to Additional Functions -> Sensitivities/ Distribution Factors to calculate zone-to-slack PTDF directly
-
-if not os.path.exists('./PTDF results'):
-    os.mkdir('./PTDF results')
-
-# Get Sensitivities/ Distribution Factors object
-ptdf = app.GetFromStudyCase("ComVstab")
-
-ptdf.iopt_method = 0            # 0: AC Load Flow, balanced, positive sequence
-ptdf.calcPtdf = 1               # Select busbars ptdf calculation
-# ptdf.p_bus=[el for el in all_zones]            # Select bidding zones as busbars to consider
-ptdf.calcRegionSens = 1         # Select "calculate regional sensitivities"
-ptdf.calcBoundSens = 1          # Select "calculate boundary sensitivity between adjacent regions"
-ptdf.calcShiftKeySens = 1       # Select "injection based on GSK"
-
-# T-_DO Do this once per 24h time step!
-# TO-DO Do this also with contingencies!
-
-# Execute Distribution factors calculation
-ptdf.Execute()
-
-# Collect results of distribution factor calculation (via conversion to csv)
-res=app.GetFromStudyCase("ComRes")
-res.iopt_exp=6                         # 6: csv
-res.f_name=r'C:\Users\alice\OneDrive - Lund University\Dokument\Doktorand IEA\Kurser\Flowbased\Python - Flowbased\PTDF results/ptdf.csv'
-res.ExportFullRange()
-
-ptdf_res=pd.read_csv('./PTDF results/ptdf.csv')
-
-
-#%%
+#%% Calculate Fmax and Fref
 
 CNEC= pd.read_csv('./cnec results/CNEC_list.csv',index_col=0)
 CNE= pd.read_csv('./cnec results/CNE_list.csv',index_col=0)
-# Now we want to filter to show the CNE and CNEC elements only
-ptdf_cnec=ptdf_res[CNE].iloc[1:,:].transpose()
 
-#%% Calculate Fmax and Fref
+# Create space to save ptdf results (calculated below)
+if not os.path.exists('./PTDF results'):
+    os.mkdir('./PTDF results')
 
 q_share= 0.1        # The share of reactive power is assumed to be 10%
-
-hour = 0 
-build_igm(hour, app, bidding_zones, bidding_zones_names, tso_data, boundaries)
-
-#%%
-
-Fmax_cne = {}
-Fref_cne = []
+Fmax_cne = pd.DataFrame(columns=CNE.columns,index=range(1,25))
+Fref_cne = pd.DataFrame(columns=CNE.columns,index=range(1,25))
 
 
 # Collect line elements
 lines = app.GetCalcRelevantObjects("ElmLne")
 
-# For each CNE, calculate Fmax and collect Fref
-for cne_el in CNE['0']:
-   for line in lines:
-       if str(cne_el) == str(line.loc_name):
-          
-          F = line.GetAttribute('m:P:bus1')
-          Fref_cne.append(F)
-          loading = line.GetAttribute('c:loading')
-          Fmax = F / loading * 100
-          Fmax_cne[line.loc_name] = Fmax
-
 # Collect NPref, the net positions of each area
-zone_ref = pd.DataFrame(index=bidding_zones_names, columns = ['NP','Fref'])
-for zone in all_zones:
-    NP = zone.GetAttribute('c:InterP')
-    zone_ref[zone.loc_name,'NP'] = NP
-
-# Calculate F0
-F0 = Fref - ptdf_cnec * zone_ref['NP']
+NPs = pd.DataFrame(columns=bidding_zones_names,index=range(1,25))
 
 
-#%%
+# Update model, run load flow, collect results for each time step
+for hour in range(1,25):
+    build_igm(hour, app, bidding_zones, bidding_zones_names, tso_data, boundaries)
+    # For each CNE, calculate Fmax and collect Fref
+    for cne_el, Fref in CNE.items():
+       for line in lines:
+           if str(cne_el) == str(line.loc_name):
+              
+              F = line.GetAttribute('m:P:bus1')
+              Fref_cne[cne_el][hour]=F
+              loading = line.GetAttribute('c:loading')
+              Fmax = F / loading * 100
+              Fmax_cne[cne_el][hour] = Fmax
+              
+    for zone in all_zones:
+        NPs[zone.loc_name][hour]=zone.GetAttribute('c:InterP')
+    
+    # Note: In PowerFactory, go to Additional Functions -> Sensitivities/ Distribution Factors to calculate zone-to-slack PTDF directly
+    # Get Sensitivities/ Distribution Factors object
+    ptdf = app.GetFromStudyCase("ComVstab")
 
+    ptdf.iopt_method = 0            # 0: AC Load Flow, balanced, positive sequence
+    ptdf.calcPtdf = 1               # Select busbars ptdf calculation
+    # ptdf.p_bus=[el for el in all_zones]            # Select bidding zones as busbars to consider
+    ptdf.calcRegionSens = 1         # Select "calculate regional sensitivities"
+    ptdf.calcBoundSens = 1          # Select "calculate boundary sensitivity between adjacent regions"
+    ptdf.calcShiftKeySens = 1       # Select "injection based on GSK"
+
+    # T-_DO Do this once per 24h time step!
+    # TO-DO Do this also with contingencies!
+
+    # Execute Distribution factors calculation
+    ptdf.Execute()
+
+    # Collect results of distribution factor calculation (via conversion to csv)
+    res=app.GetFromStudyCase("ComRes")
+    res.iopt_exp=6                         # 6: csv
+    res.f_name=rf'C:\Users\alice\OneDrive - Lund University\Dokument\Doktorand IEA\Kurser\Flowbased\Python - Flowbased\PTDF results/ptdf_{hour}.csv'
+    res.ExportFullRange()
+
+    
 # After simulation, reset original load flow values
 reset_gridmodel(app, bidding_zones, bidding_zones_names, tso_data)
+
+
+#%% Calculate F0
+
+# Transform into numpy array
+
+
+F0_all = pd.DataFrame(index=range(1,25),columns=CNE.columns)
+
+for hour in range(1,25):
+    # Read ptdf calculated values for this hour
+    ptdf_res=pd.read_csv(f'./PTDF results/ptdf_{hour}.csv')
+    # Now we want to filter to show the CNE and CNEC elements only
+    ptdf_cnec=ptdf_res[CNE.columns].iloc[1:,:].transpose()
+    ptdf_cnec = ptdf_cnec.replace('   ----',0).astype(float)
+    ptdf = np.array(ptdf_cnec)
+
+    # Select rows for the hour and transform into numpy arrays
+    Fref = np.array(Fref_cne.iloc[hour-1,:].astype(float))
+    
+    NP = np.array(NPs.iloc[hour-1,:].astype(float))
+    
+    # Calculate F0 by using matrix multiplication
+    F0 = Fref - np.dot(ptdf, NP)
+    F0_all.iloc[hour-1,:] = F0
+
+F0_all = F0_all.astype(float)
+
+#%% Calculate RAM per CNEC
+
+# RAM = Fmax + Fra - Frm - F0 - Faac
+# Fmax has been calculated above
+# Fra: "Remedial action" defined by TSO. NOT IMPLEMENTED HERE.
+# Frm: Flow reliability margin. Defined as to cover "95 % of all modelling errors"
+# F0 has been calculated above
+# Faac: "Already allocated capacity" (ancillary service/ FFR) given by TSO. NOT IMPLEMENTED HERE.
+
+RAM_all = pd.DataFrame(index=range(1,25),columns=CNE.columns)
+
+for hour in range(1,25):
+    Fmax = np.array(Fmax_cne.iloc[hour-1,:].astype(float))
+    RAM = Fmax - F0 * 0.95          # Instead of Frm value, multiply by 0.95 to add some margin
+    RAM_all.iloc[hour-1,:] = RAM
+    
+RAM_all = RAM_all.astype(float)
+
+#%% Create a list of all FB domains
+
+FB_domains = []
+
+for hour in range(1,25):
+    FB = pd.DataFrame(index=CNE.columns)
+    FB['CNE'] = CNE.columns
+    FB['RAM'] = RAM_all.iloc[hour-1,:]
+    for zone in ptdf_cnec.columns:
+        FB[zone] = ptdf_cnec[zone]
+    FB_domains.append(FB)
+

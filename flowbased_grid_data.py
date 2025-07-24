@@ -165,6 +165,33 @@ for hour in range(1,25):
 # After simulation, reset original load flow values
 reset_gridmodel(app, bidding_zones, bidding_zones_names, tso_data)
 
+#%% Save results for all elements in a dataframe
+# Collect all columns and their data into a flat dictionary
+flat_results = {}
+
+# Loop through everything except 'Boundaries'
+for zone_name, zone_data in results.items():
+    if zone_name == 'Boundaries':
+        continue
+    for cat_name, cat_data in zone_data.items():
+        for el_name, res_dict in cat_data.items():
+            for res_name, res_list in res_dict.items():
+                if res_name == 'm:u':
+                    continue  # Skip voltages
+                col_name = f"{zone_name}/{cat_name}/{el_name}/{res_name}"
+                flat_results[col_name] = res_list
+
+# Handle Boundaries separately
+for bound_name, bound_data in results.get('Boundaries', {}).items():
+    for res_name, res_list in bound_data.items():
+        if res_name == 'M:u':
+            continue  # Skip 'M:u'
+        col_name = f"Boundaries/{bound_name}/{res_name}"
+        flat_results[col_name] = res_list
+# Create DataFrame
+df_res = pd.DataFrame.from_dict(flat_results, orient='columns')
+df_res.to_csv(r'./cnec results/all results.csv')
+
 #%% Plot selected results
 
 for item, values in results['Boundaries'].items():
@@ -212,6 +239,7 @@ if not os.path.exists('./figures/all results'):
 
 # To store violating elements
 CNE = []
+CNE_loading=[]
 
 if not os.path.exists('./cnec results'):
     os.mkdir('./cnec results')
@@ -235,6 +263,7 @@ for zone_name, zone_data in results.items():
                     # Check for overload
                     if res_type == 'c:loading' and any(v > 100 for v in values) and cat_name == 'Lines':
                         CNE.append(el_name)
+                        CNE_loading.append(values)
                         violated = True
     
                     # Check for voltage violation
@@ -258,7 +287,12 @@ for zone_name, zone_data in results.items():
 
 print (f'Critical Network Elements: {CNE}')
 
-pd.DataFrame(CNE).to_csv(r'./cnec results/CNE_list.csv')
+CNE_df=pd.DataFrame(columns=CNE)
+for i,col in enumerate(CNE_loading):
+    CNE_df.iloc[:,i] = col
+
+CNE_df.to_csv(r'./cnec results/CNE_list.csv')
+
 
 #%% CNEC - Critical Network Element with Contingency
 
@@ -307,7 +341,6 @@ contingencies = contingencies.loc[:, mask].iloc[1:,:].replace("   ----",0).astyp
 CNEC = contingencies.loc[:, (contingencies > 80).any()].columns.tolist()
 
 pd.DataFrame(CNEC).to_csv(r'./cnec results/CNEC_list.csv')
-
 
 # CDC - Combined Dynamic Constraint. These are not calculated specifically in this code.
 
