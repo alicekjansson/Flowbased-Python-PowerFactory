@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import matplotlib
 import os
 import pickle
-from flowbased_RCC_functions import build_igm, reset_gridmodel
 from flowbased_functions import get_zone
 
 # Set up connection to PowerFactory
@@ -48,18 +47,34 @@ for ElmZone in all_zones:
 with open('./data/ToRCC/tso_data.pkl', 'rb') as f:
     tso_data = pickle.load(f)
 
-#%% Calculate Fmax and Fref
+#%% Load CRAC files
 
-CNEC= pd.read_csv('./cnec results/CNEC_list.csv',index_col=0)
+all_results = pd.read_csv('./cnec results/all results.csv',index_col=0)
+all_results = all_results[[col for col in all_results if 'c:loading' in col]]       # Filter to only consider loading results
+all_results.columns=[str(el).split('/')[2] for el in all_results.columns]           # Simplify by changing column names to element name only
+
+
+CNEC= pd.read_csv('./cnec results/CNEC_df.csv',index_col=0)
+# Select elements with overloads
+# Index is list of outages
+# Columns is list of overloaded elements during outages
+CNEC = CNEC[~(CNEC == 0).all(axis=1)].drop('No Cont')
+
 CNE= pd.read_csv('./cnec results/CNE_list.csv',index_col=0)
+
+# Collect loading results for all CNE(C) elements in dataframe
+CNEC_elements = CNE.columns.append(CNEC.columns).drop_duplicates()
+CNEC_res = all_results[[col for col in all_results if any(keyword == col for keyword in CNEC_elements)]]
+
+#%% Calculate Fmax and Fref
 
 # Create space to save ptdf results (calculated below)
 if not os.path.exists('./PTDF results'):
     os.mkdir('./PTDF results')
 
 q_share= 0.1        # The share of reactive power is assumed to be 10%
-Fmax_cne = pd.DataFrame(columns=CNE.columns,index=range(1,25))
-Fref_cne = pd.DataFrame(columns=CNE.columns,index=range(1,25))
+Fmax_cne = pd.DataFrame(columns=CNEC.columns,index=range(1,25))
+Fref_cne = pd.DataFrame(columns=CNEC.columns,index=range(1,25))
 
 
 # Collect line elements
@@ -68,16 +83,13 @@ lines = app.GetCalcRelevantObjects("ElmLne")
 # Collect NPref, the net positions of each area
 NPs = pd.DataFrame(columns=bidding_zones_names,index=range(1,25))
 
-print('Starting loop')
 # Update model, run load flow, collect results for each time step
 for hour in range(1,25):
-    print(f'Hour {hour}')
     #Select Operation Scenario 
     opscen = f'Hour{hour}'
     opfolder= app.GetProjectFolder('scen') 
     ops=opfolder.GetContents() 
     op_check=False
-    # build_igm(hour, app, bidding_zones, bidding_zones_names, tso_data, boundaries)
     for op in ops: 
         op_name = str(op).split('\\')[5]
         op_name = op_name.split('.')[0]
@@ -96,7 +108,7 @@ for hour in range(1,25):
     else:
         print("Load Flow command returns an error: " + str(ierr))   
     # For each CNE, calculate Fmax and collect Fref
-    for cne_el, Fref in CNE.items():
+    for cne_el, Fref in CNEC.items():
        for line in lines:
            if str(cne_el) == str(line.loc_name):
               
@@ -154,13 +166,13 @@ if op_check==False:
 # Transform into numpy array
 
 
-F0_all = pd.DataFrame(index=range(1,25),columns=CNE.columns)
+F0_all = pd.DataFrame(index=range(1,25),columns=CNEC.columns)
 
 for hour in range(1,25):
     # Read ptdf calculated values for this hour
     ptdf_res=pd.read_csv(f'./PTDF results/ptdf_{hour}.csv')
     # Now we want to filter to show the CNE and CNEC elements only
-    ptdf_cnec=ptdf_res[CNE.columns].iloc[1:,:].transpose()
+    ptdf_cnec=ptdf_res[CNEC.columns].iloc[1:,:].transpose()
     ptdf_cnec = ptdf_cnec.replace('   ----',0).astype(float)
     ptdf = np.array(ptdf_cnec)
 
@@ -184,7 +196,7 @@ F0_all = F0_all.astype(float)
 # F0 has been calculated above
 # Faac: "Already allocated capacity" (ancillary service/ FFR) given by TSO. NOT IMPLEMENTED HERE.
 
-RAM_all = pd.DataFrame(index=range(1,25),columns=CNE.columns)
+RAM_all = pd.DataFrame(index=range(1,25),columns=CNEC.columns)
 
 for hour in range(1,25):
     Fmax = np.array(Fmax_cne.iloc[hour-1,:].astype(float))
@@ -198,8 +210,8 @@ RAM_all = RAM_all.astype(float)
 FB_domains = []
 
 for hour in range(1,25):
-    FB = pd.DataFrame(index=CNE.columns)
-    FB['CNE'] = CNE.columns
+    FB = pd.DataFrame(index=CNEC.columns)
+    FB['CNEC'] = CNEC.columns
     FB['RAM'] = RAM_all.iloc[hour-1,:]
     for zone in ptdf_cnec.columns:
         FB[zone] = ptdf_cnec[zone]

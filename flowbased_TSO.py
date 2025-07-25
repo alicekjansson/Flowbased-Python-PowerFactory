@@ -14,7 +14,6 @@ import matplotlib
 import os
 warnings.filterwarnings('ignore')
 from flowbased_functions import get_zone, setup_igm
-from flowbased_RCC_functions import build_igm
 
 # Create connection to data folder
 if not os.path.exists('./data'):
@@ -328,6 +327,18 @@ contingencies = contingencies.loc[:, mask].iloc[1:,:].replace("   ----",0).astyp
 # Keep only columns that have contingencies (loaded above 80%)
 CNEC = contingencies.loc[:, (contingencies > 80).any()].columns.tolist()
 
+#%%
+CNEC_df = contingencies[CNEC]
+CNEC_df.index=[int(abs(float(el))) for el in CNEC_df.index]
+
+CNEC_elements = pd.read_csv('./cnec results/List of contingencies (elements).csv',index_col=0).dropna()
+CNEC_elements.loc['No Cont']={'Number':0}
+
+# Change index of CNEC_df to corresponding line
+number_to_index = CNEC_elements.set_index('Number').index.to_series()
+CNEC_df.index = CNEC_df.index.map(lambda x: CNEC_elements[CNEC_elements["Number"] == x].index[0])
+
+pd.DataFrame(CNEC_df).to_csv(r'./cnec results/CNEC_df.csv')
 pd.DataFrame(CNEC).to_csv(r'./cnec results/CNEC_list.csv')
 
 # CDC - Combined Dynamic Constraint. These are not calculated specifically in this code.
