@@ -68,10 +68,33 @@ lines = app.GetCalcRelevantObjects("ElmLne")
 # Collect NPref, the net positions of each area
 NPs = pd.DataFrame(columns=bidding_zones_names,index=range(1,25))
 
-
+print('Starting loop')
 # Update model, run load flow, collect results for each time step
 for hour in range(1,25):
-    build_igm(hour, app, bidding_zones, bidding_zones_names, tso_data, boundaries)
+    print(f'Hour {hour}')
+    #Select Operation Scenario 
+    opscen = f'Hour{hour}'
+    opfolder= app.GetProjectFolder('scen') 
+    ops=opfolder.GetContents() 
+    op_check=False
+    # build_igm(hour, app, bidding_zones, bidding_zones_names, tso_data, boundaries)
+    for op in ops: 
+        op_name = str(op).split('\\')[5]
+        op_name = op_name.split('.')[0]
+        if opscen == op_name: 
+            op.Activate() 
+            active=op 
+            op_check=True 
+            print(f'IGM built for hour {hour}')
+    if op_check==False: 
+        print("There is no active operation scenario")
+    # Run load flow
+    ldf = app.GetFromStudyCase("ComLdf")
+    ierr = ldf.Execute()
+    if ierr == 0:
+        print("Load Flow command returns no error")
+    else:
+        print("Load Flow command returns an error: " + str(ierr))   
     # For each CNE, calculate Fmax and collect Fref
     for cne_el, Fref in CNE.items():
        for line in lines:
@@ -111,7 +134,19 @@ for hour in range(1,25):
 
     
 # After simulation, reset original load flow values
-reset_gridmodel(app, bidding_zones, bidding_zones_names, tso_data)
+# reset_gridmodel(app, bidding_zones, bidding_zones_names, tso_data)
+
+# Then go back to original operation scenario
+opscen = 'Base Scenario'
+#Select Operation Scenario 
+op_check=False 
+for op in ops: 
+    if opscen in str(op): 
+        op.Activate() 
+        print(f'Activated {opscen}')
+        op_check = True
+if op_check==False: 
+    print("There is no active operation scenario")
 
 
 #%% Calculate F0
