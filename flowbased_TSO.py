@@ -34,7 +34,8 @@ sys.path.append(r'C:\Program Files\DIgSILENT\PowerFactory 2025 SP1\Python\3.11')
 import powerfactory as pf
 from flowbased_PF_functions import set_up_pf
 
-app,studycase=set_up_pf('Transmission System','01 Load Flow','Base Scenario') 
+# app,studycase=set_up_pf('Transmission System','01 Load Flow','Base Scenario') 
+app,studycase=set_up_pf('Transmission System','02 Contingency Analysis','Base Scenario') 
 app.Show()
 
 # Collect data on zones in network
@@ -213,7 +214,7 @@ for item, values in results['Boundaries'].items():
     ax.set_xlabel('Hour',fontsize='large')
     ax.set_ylabel('Load (MW)',fontsize='large')
     ax.set_title(f'Boundary flows: {item}')
-    ax.set_ylim([-2000,500])
+    # ax.set_ylim([-2000,500])
     plt.legend(fontsize='large')
     plt.savefig(rf'./figures/{item} Boundary Resulting Flows', bbox_inches='tight')
     # plt.show() 
@@ -287,11 +288,11 @@ CNEC= []
 
 
 # Activate Contingency StudyCase
-studycases= app.GetProjectFolder('study').GetContents()
-for sc in studycases:
-    if ('Contingency') in str(sc):
-        sc.Activate()
-        active=sc
+# studycases= app.GetProjectFolder('study').GetContents()
+# for sc in studycases:
+#     if ('Contingency') in str(sc):
+#         sc.Activate()
+#         active=sc
 
 # Get element        
 cont = app.GetFromStudyCase("ComSimoutage")
@@ -311,11 +312,11 @@ res.ExportFullRange()
 
 contingencies = pd.read_csv('./cnec results/contingencies.csv',index_col=0)
         
-# Go back to original studycase
-for sc in studycases:
-    if ('01') in str(sc):
-        sc.Activate()
-        active=sc
+# # Go back to original studycase
+# for sc in studycases:
+#     if ('01') in str(sc):
+#         sc.Activate()
+#         active=sc
         
 # To simplify here, I have chosen to only consider overloaded branches (not voltage issues)
 
