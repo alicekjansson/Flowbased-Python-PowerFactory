@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import os
 warnings.filterwarnings('ignore')
-from flowbased_functions import get_zone, setup_igm
+from flowbased_functions import get_zone, setup_igm, bidding_zones, reset_op, open_op
 
 # Create connection to data folder
 if not os.path.exists('./data'):
@@ -24,6 +24,7 @@ if not os.path.exists('./data/IGM'):
     os.mkdir('./data/IGM')
 
 # Create temporary storage folder for TSO
+
 if not os.path.exists('./temp'):
     os.mkdir('./temp')
 
@@ -34,24 +35,15 @@ sys.path.append(r'C:\Program Files\DIgSILENT\PowerFactory 2025 SP1\Python\3.11')
 import powerfactory as pf
 from flowbased_PF_functions import set_up_pf
 
+# Set up PowerFactory
 # app,studycase=set_up_pf('Transmission System','01 Load Flow','Base Scenario') 
 app,studycase=set_up_pf('Transmission System','02 Contingency Analysis','Base Scenario') 
-app.Show()
+app.Show()              # De-select for faster calculations
 
-# Collect data on zones in network
-all_zones=app.GetCalcRelevantObjects("ElmZone")
+# Collect boundaries
+boundaries = app.GetCalcRelevantObjects("ElmBoundary")
 
-# Set up dictionaries with bidding zone data
-bidding_zones = {}
-bidding_zones_names=[]
-res_elements = {}
-for ElmZone in all_zones:
-    name= ElmZone.loc_name
-    bidding_zones_names.append(name)
-    in_data,res_data = get_zone(ElmZone)
-    res_elements[name] = res_data
-    bidding_zones[name] = in_data
-    
+bidding_zones, bidding_zones_names, all_zones, res_elements = bidding_zones(app)
 # Collect boundaries
 boundaries = app.GetCalcRelevantObjects("ElmBoundary")
 
@@ -66,6 +58,7 @@ data_curves['Nuclear']=[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 data_curves['Oil']=[el*0.8 for el in data_curves['Load']]
 data_curves['Coal']=[el*0.8 for el in data_curves['Load']]
 data_curves['Gas']=[el*0.8 for el in data_curves['Load']]
+
 
 pd.DataFrame(data_curves).to_csv(r'.\data\ToRCC\D-2data.csv')
 
@@ -93,6 +86,22 @@ for name,zone in bidding_zones.items():
 # Save dictionary    
 with open('./data/ToRCC/tso_data.pkl', 'wb') as f:
     pickle.dump(tso_data, f)
+    
+#%%  Create dataframe to look at zones
+# Flatten tso_data into a list of records without 'Load curve'
+records = []
+for zone_name, elements in tso_data.items():
+    for element_name, element_data in elements.items():
+        record = {
+            'Zone': zone_name,
+            'Element': element_name,
+            'Category': element_data.get('Category'),
+            'Static Power (MW)': element_data.get('Static Power (MW)')
+        }
+        records.append(record)
+
+# Create DataFrame
+df = pd.DataFrame(records)
     
     
 #%%
@@ -149,35 +158,14 @@ for bound in boundaries:
 #%% Update model for each time step
 # This is implemented by storing each timestep in an operation scenario. Could be done in other ways
 for hour in range(1,25):
-    opscen = f'Hour{hour}'
-    #Select Operation Scenario 
-    opfolder= app.GetProjectFolder('scen') 
-    ops=opfolder.GetContents() 
-    op_check=False 
-    for op in ops: 
-        op_name = str(op).split('\\')[5]
-        op_name = op_name.split('.')[0]
-        if opscen == op_name: 
-            op.Activate() 
-            active=op 
-            op_check=True 
-            setup_igm(hour, app, results, bidding_zones, res_elements, bidding_zones_names, tso_data, boundaries, res_collect)
-            print(f'IGM built for hour {hour}')
-    if op_check==False: 
-        print("There is no active operation scenario")
+    # Select and open operation scenario
+    open_op(app,hour)
+    setup_igm(hour, app, results, bidding_zones, res_elements, bidding_zones_names, tso_data, boundaries, res_collect)
 
-#%%
+
 # Then go back to original operation scenario
-opscen = 'Base Scenario'
-#Select Operation Scenario 
-op_check=False 
-for op in ops: 
-    if opscen in str(op): 
-        op.Activate() 
-        print(f'Activated {opscen}')
-        op_check = True
-if op_check==False: 
-    print("There is no active operation scenario")
+reset_op(app)
+
 #%% Save results for all elements in a dataframe
 # Collect all columns and their data into a flat dictionary
 flat_results = {}
@@ -286,14 +274,6 @@ CNE_df.to_csv(r'./cnec results/CNE_list.csv')
 
 CNEC= []
 
-
-# Activate Contingency StudyCase
-# studycases= app.GetProjectFolder('study').GetContents()
-# for sc in studycases:
-#     if ('Contingency') in str(sc):
-#         sc.Activate()
-#         active=sc
-
 # Get element        
 cont = app.GetFromStudyCase("ComSimoutage")
 # Define limits
@@ -312,11 +292,6 @@ res.ExportFullRange()
 
 contingencies = pd.read_csv('./cnec results/contingencies.csv',index_col=0)
         
-# # Go back to original studycase
-# for sc in studycases:
-#     if ('01') in str(sc):
-#         sc.Activate()
-#         active=sc
         
 # To simplify here, I have chosen to only consider overloaded branches (not voltage issues)
 
@@ -328,7 +303,6 @@ contingencies = contingencies.loc[:, mask].iloc[1:,:].replace("   ----",0).astyp
 # Keep only columns that have contingencies (loaded above 80%)
 CNEC = contingencies.loc[:, (contingencies > 80).any()].columns.tolist()
 
-#%%
 CNEC_df = contingencies[CNEC]
 CNEC_df.index=[int(abs(float(el))) for el in CNEC_df.index]
 
@@ -344,22 +318,22 @@ pd.DataFrame(CNEC).to_csv(r'./cnec results/CNEC_list.csv')
 
 # CDC - Combined Dynamic Constraint. These are not calculated specifically in this code.
 
-#%% Generation and Load Shiftkeys
+#%% Generation and Load Shiftkeys - Done within PowerFactory instead
 
-GLSK_strat = 3                  # Select strategy (3: Relative participation to installed capacity)
-GLSK = {}
+# GLSK_strat = 3                  # Select strategy (3: Relative participation to installed capacity)
+# GLSK = {}
 
-for zone, values in tso_data.items():
-    zone_dict = {}
-    # Filter for generators
-    gen_units = {name: data['Static Power (MW)'] for name, data in values.items() if data['Category'] != 'Load'}
-    # Calculate the total generation capacity in the zone
-    total_capacity = sum(gen_units.values())
-    # Normalize each unit's capacity
-    if total_capacity > 0:
-        zone_dict = {name: capacity / total_capacity for name, capacity in gen_units.items()}
-    # Store the normalized generation distribution for the zone
-    GLSK[zone] = zone_dict
+# for zone, values in tso_data.items():
+#     zone_dict = {}
+#     # Filter for generators
+#     gen_units = {name: data['Static Power (MW)'] for name, data in values.items() if data['Category'] != 'Load'}
+#     # Calculate the total generation capacity in the zone
+#     total_capacity = sum(gen_units.values())
+#     # Normalize each unit's capacity
+#     if total_capacity > 0:
+#         zone_dict = {name: capacity / total_capacity for name, capacity in gen_units.items()}
+#     # Store the normalized generation distribution for the zone
+#     GLSK[zone] = zone_dict
     
 # TO-DO: IMPLEMENT THE OTHER STRATEGIES
 

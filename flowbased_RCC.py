@@ -30,7 +30,7 @@ app.Show()              # De-select for faster calculations
 # Collect boundaries
 boundaries = app.GetCalcRelevantObjects("ElmBoundary")
 
-bidding_zones, bidding_zones_names, all_zones = bidding_zones(app)
+bidding_zones, bidding_zones_names, all_zones, res_data = bidding_zones(app)
 
     
 # Load tso_data dictionary
@@ -60,7 +60,7 @@ CNE= pd.read_csv('./cnec results/CNE_list.csv',index_col=0)
 # CNEC_elements_all = CNE.columns.append(CNEC.columns).drop_duplicates()
 # CNEC_res = all_results[[col for col in all_results if any(keyword == col for keyword in CNEC_elements_all)]]
 
-#%% Calculate Fmax and Fref
+#%% Calculate PTDF
 
 # Create space to save ptdf results (calculated below)
 if not os.path.exists('./PTDF results'):

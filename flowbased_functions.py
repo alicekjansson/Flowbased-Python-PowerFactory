@@ -73,7 +73,7 @@ def bidding_zones(app):
         in_data,res_data = get_zone(ElmZone)
         res_elements[name] = res_data
         bidding_zones[name] = in_data
-    return bidding_zones, bidding_zones_names, all_zones
+    return bidding_zones, bidding_zones_names, all_zones, res_elements
     
 #Select and activate Operation Scenario 
 def open_op(app, hour):
@@ -115,7 +115,6 @@ def calc_ptdf(app,label):
     ptdf = app.GetFromStudyCase("ComVstab")
 
     ptdf.iopt_method = 0            # 0: AC Load Flow, balanced, positive sequence
-    # OBS: These below may need to be selected manually within PowerFactory!
     ptdf.factors4bus = 1            # Select "Power change -> All buses simultaneously"
     ptdf.calcPtdf = 1               # Select busbars ptdf calculation
     ptdf.isContSens = 0             # De-select consider contingencies
@@ -131,7 +130,7 @@ def calc_ptdf(app,label):
     res=app.GetFromStudyCase("ComRes")
     res.iopt_exp=6                         # 6: csv
     # res.f_name=rf'C:\Users\alice\OneDrive - Lund University\Dokument\Doktorand IEA\Kurser\Flowbased\Python - Flowbased\PTDF results/ptdf_{hour}.csv'
-    res.f_name=rf'C:\Users\alice\OneDrive - Lund University\Dokument\Doktorand IEA\Kurser\Flowbased\Python - Flowbased\PTDF results/ptdf_{label}.csv'
+    res.f_name=rf'./PTDF results/ptdf_{label}.csv'
     res.ExportFullRange()
     
     
