@@ -9,5 +9,6 @@ This repository is an example of how to build a flow-based domain in DIgSILENT P
 *flowbased_RCC.py* outlines the creation of the flow-based domain at the regional coordinator side.
 
 ## Other material
- - Functions listed in *flowbased_PF_functions.py* are used in both scripts listed above.
+ - Functions listed in *flowbased_functions.py* are used in both scripts listed above.
+ - *flowbased_PF_functions.py* holds the initialization function of PowerFactory through Python.
  - The grid model used in PowerFactory is available in the tool, but is also available in *PF Model - Transmission System (Flowbased).pfd*
